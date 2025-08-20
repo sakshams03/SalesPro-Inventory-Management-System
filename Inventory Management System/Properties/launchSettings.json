@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "Inventory_Management_System": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7118",
+      "launchBrowser": false
+    }
+  }
+}
