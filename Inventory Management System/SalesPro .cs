@@ -44,6 +44,11 @@ namespace Inventory_Management_System
             AddOrUpdate("CorrelationID", guid.ToString(), properties);
 
             #region Authorization
+            var principal = functionContext.GetHttpContext()?.User;
+            var roles = principal?.Claims
+                            .Where(c => c.Type == "roles")
+                            .Select(c => c.Value)
+                            .ToList() ?? new List<string>();
             if (functionContext.Items.TryGetValue("UserRoles", out var rolesObj) && rolesObj is List<string> roles)
             {
                 // Authorization (Authentication is automatically taken care by Azure Entra Id)
@@ -111,6 +116,11 @@ namespace Inventory_Management_System
             timer.Start();
             var startTime = DateTime.UtcNow;
             #region Authorization
+            var principal = functionContext.GetHttpContext()?.User;
+            var roles = principal?.Claims
+                            .Where(c => c.Type == "roles")
+                            .Select(c => c.Value)
+                            .ToList() ?? new List<string>();
             if (functionContext.Items.TryGetValue("UserRoles", out var rolesObj) && rolesObj is List<string> roles)
             {
                 // Authorization (Authentication is automatically taken care by Azure Entra Id)
@@ -165,6 +175,11 @@ namespace Inventory_Management_System
             timer.Start();
             var startTime = DateTime.UtcNow;
             #region Authorization
+            var principal = functionContext.GetHttpContext()?.User;
+            var roles = principal?.Claims
+                            .Where(c => c.Type == "roles")
+                            .Select(c => c.Value)
+                            .ToList() ?? new List<string>();
             if (functionContext.Items.TryGetValue("UserRoles", out var rolesObj) && rolesObj is List<string> roles)
             {
                 // Authorization (Authentication is automatically taken care by Azure Entra Id)
@@ -224,6 +239,11 @@ namespace Inventory_Management_System
             timer.Start();
             var startTime = DateTime.UtcNow;
             #region Authorization
+            var principal = functionContext.GetHttpContext()?.User;
+            var roles = principal?.Claims
+                            .Where(c => c.Type == "roles")
+                            .Select(c => c.Value)
+                            .ToList() ?? new List<string>();
             if (functionContext.Items.TryGetValue("UserRoles", out var rolesObj) && rolesObj is List<string> roles)
             {
                 // Authorization (Authentication is automatically taken care by Azure Entra Id)
@@ -291,6 +311,11 @@ namespace Inventory_Management_System
             AddOrUpdate("CorrelationID", guid.ToString(), properties);
 
             #region Authorization
+            var principal = functionContext.GetHttpContext()?.User;
+            var roles = principal?.Claims
+                            .Where(c => c.Type == "roles")
+                            .Select(c => c.Value)
+                            .ToList() ?? new List<string>();
             if (functionContext.Items.TryGetValue("UserRoles", out var rolesObj) && rolesObj is List<string> roles)
             {
                 // Authorization (Authentication is automatically taken care by Azure Entra Id)
