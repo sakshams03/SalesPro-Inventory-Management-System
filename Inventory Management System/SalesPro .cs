@@ -246,7 +246,7 @@ namespace Inventory_Management_System
                 {
                     isSucess = false;
                     validationFailures.Add("ProductCode is required when searching for a particular item");
-                    return await Helper.CreateHttpResponse(HttpStatusCode.BadRequest, request, validationFailures);
+                    return await Helper.CreateHttpResponse<string>(HttpStatusCode.BadRequest, request, errors: validationFailures);
 
                 }
                 var getRequest = new GetProductDTO()
