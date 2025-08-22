@@ -49,17 +49,12 @@ namespace Inventory_Management_System
                             .Where(c => c.Type == "roles")
                             .Select(c => c.Value)
                             .ToList() ?? new List<string>();
-            if (functionContext.Items.TryGetValue("UserRoles", out var rolesObj) && rolesObj is List<string> roles)
+            if (!roles.Contains("Inventory.AddItem"))
             {
-                // Authorization (Authentication is automatically taken care by Azure Entra Id)
-                if (!roles.Contains("Inventory.AddItem"))
-                {
-                    _telemetry.TrackEvent("User does not have authorization persmissions", properties);
-                    isSucess = false;
-                    validationFailures.Add("User does not have authorization persmissions");
-                    return await Helper.CreateHttpResponse<string>(HttpStatusCode.Forbidden, request, errors:validationFailures);
-                }
-
+                _telemetry.TrackEvent("User does not have authorization permissions", properties);
+                isSucess = false;
+                validationFailures.Add("User does not have authorization permissions");
+                return await Helper.CreateHttpResponse<string>( statusCode:HttpStatusCode.Forbidden, request, errors: validationFailures);
             }
             #endregion
             try
@@ -70,7 +65,7 @@ namespace Inventory_Management_System
 
                 if (!Validations.IsValid<Product>(requestContent, validationFailures))
                 {
-                    var response = await Helper.CreateHttpResponse(HttpStatusCode.BadRequest, request, validationFailures);
+                    var response = await Helper.CreateHttpResponse(statusCode:HttpStatusCode.BadRequest, request, validationFailures);
                     _telemetry.TrackTrace($"Validation errors: {string.Join(",", validationFailures)}");
                     return response;
                 }
@@ -83,7 +78,7 @@ namespace Inventory_Management_System
                 serviceBusMessage.ApplicationProperties.Add("CorrelationID", guid.ToString());// this will help tracking the requests accross multiple components
                 await sender.SendMessageAsync(serviceBusMessage);
                 _telemetry.TrackTrace("Message sent to servicebus", properties);
-                return await Helper.CreateHttpResponse(HttpStatusCode.Created, request, validationFailures);
+                return await Helper.CreateHttpResponse(statusCode:HttpStatusCode.Created, request, validationFailures);
 
             }
             #region ExceptionHandling
@@ -91,7 +86,7 @@ namespace Inventory_Management_System
             {
                 _telemetry.TrackException(ex, properties);
                 isSucess = false;
-                return await Helper.CreateHttpResponse<string>(HttpStatusCode.BadRequest, request,errors: validationFailures); //since this is a caught exception
+                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.BadRequest, request,errors: validationFailures); //since this is a caught exception
             }
             finally
             {
@@ -121,17 +116,12 @@ namespace Inventory_Management_System
                             .Where(c => c.Type == "roles")
                             .Select(c => c.Value)
                             .ToList() ?? new List<string>();
-            if (functionContext.Items.TryGetValue("UserRoles", out var rolesObj) && rolesObj is List<string> roles)
+            if (!roles.Contains("Inventory.DeleteItem"))
             {
-                // Authorization (Authentication is automatically taken care by Azure Entra Id)
-                if (!roles.Contains("Inventory.DeleteItem"))
-                {
-                    _telemetry.TrackEvent("User does not have authorization persmissions", properties);
-                    isSucess = false;
-                    validationFailures.Add("User does not have authorization persmissions");
-                    return await Helper.CreateHttpResponse<string>(HttpStatusCode.Forbidden, request, errors: validationFailures);
-                }
-
+                _telemetry.TrackEvent("User does not have authorization permissions", properties);
+                isSucess = false;
+                validationFailures.Add("User does not have authorization permissions");
+                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.Forbidden, request, errors: validationFailures);
             }
             #endregion
             try
@@ -143,7 +133,7 @@ namespace Inventory_Management_System
                 _telemetry.TrackEvent($"Performing delete option for product with product code {payload.ProductCode}", properties);
                 await _cosmosDbProvider.DeleteAsync(payload);
                 _telemetry.TrackTrace("Deletion successful", properties);
-                return request.CreateResponse(HttpStatusCode.OK);
+                return request.CreateResponse(statusCode:HttpStatusCode.OK);
             }
             #region ExceptionHandling
             catch (Exception ex)
@@ -151,7 +141,7 @@ namespace Inventory_Management_System
                 isSucess = false;
                 _telemetry.TrackException(ex, properties);
                 validationFailures.Add(ex.Message);
-                return await Helper.CreateHttpResponse<string>(HttpStatusCode.InternalServerError, request, errors: validationFailures); //since we don't know what happened here
+                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.InternalServerError, request, errors: validationFailures); //since we don't know what happened here
             }
             finally
             {
@@ -180,17 +170,12 @@ namespace Inventory_Management_System
                             .Where(c => c.Type == "roles")
                             .Select(c => c.Value)
                             .ToList() ?? new List<string>();
-            if (functionContext.Items.TryGetValue("UserRoles", out var rolesObj) && rolesObj is List<string> roles)
+            if (!roles.Contains("Inventory.ListItems"))
             {
-                // Authorization (Authentication is automatically taken care by Azure Entra Id)
-                if (!roles.Contains("Inventory.ListItem"))
-                {
-                    _telemetry.TrackEvent("User does not have authorization persmissions", properties);
-                    isSucess = false;
-                    validationFailures.Add("User does not have authorization persmissions");
-                    return await Helper.CreateHttpResponse<string>(HttpStatusCode.Forbidden, request, errors: validationFailures);
-                }
-
+                _telemetry.TrackEvent("User does not have authorization permissions", properties);
+                isSucess = false;
+                validationFailures.Add("User does not have authorization permissions");
+                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.Forbidden, request, errors: validationFailures);
             }
             #endregion
             try
@@ -207,7 +192,7 @@ namespace Inventory_Management_System
                 _telemetry.TrackEvent($"Performing search operation based on query parameters", properties);
                 var list = await _cosmosDbProvider.GetProducts(getRequest);
                 _telemetry.TrackTrace("Search operation successful", properties);
-                return await Helper.CreateHttpResponse(HttpStatusCode.OK, request, data: list);
+                return await Helper.CreateHttpResponse(statusCode:HttpStatusCode.OK, request, data: list);
             }
             #region ExceptionHandling
             catch (Exception ex)
@@ -215,7 +200,7 @@ namespace Inventory_Management_System
                 isSucess = false;
                 _telemetry.TrackException(ex, properties);
                 validationFailures.Add(ex.Message);
-                return await Helper.CreateHttpResponse<string>(HttpStatusCode.InternalServerError, request, errors:validationFailures); //since we don't know what happened here
+                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.InternalServerError, request, errors:validationFailures); //since we don't know what happened here
             }
             finally
             {
@@ -244,17 +229,12 @@ namespace Inventory_Management_System
                             .Where(c => c.Type == "roles")
                             .Select(c => c.Value)
                             .ToList() ?? new List<string>();
-            if (functionContext.Items.TryGetValue("UserRoles", out var rolesObj) && rolesObj is List<string> roles)
+            if (!roles.Contains("Inventory.ListItem"))
             {
-                // Authorization (Authentication is automatically taken care by Azure Entra Id)
-                if (!roles.Contains("Inventory.ListItem"))
-                {
-                    _telemetry.TrackEvent("User does not have authorization persmissions", properties);
-                    isSucess = false;
-                    validationFailures.Add("User does not have authorization persmissions");
-                    return await Helper.CreateHttpResponse<string>(HttpStatusCode.Forbidden, request, errors:validationFailures);
-                }
-
+                _telemetry.TrackEvent("User does not have authorization permissions", properties);
+                isSucess = false;
+                validationFailures.Add("User does not have authorization permissions");
+                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.Forbidden, request, errors: validationFailures);
             }
             #endregion
             try
@@ -266,7 +246,7 @@ namespace Inventory_Management_System
                 {
                     isSucess = false;
                     validationFailures.Add("ProductCode is required when searching for a particular item");
-                    return await Helper.CreateHttpResponse<string>(HttpStatusCode.BadRequest, request, errors: validationFailures);
+                    return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.BadRequest, request, errors: validationFailures);
 
                 }
                 var getRequest = new GetProductDTO()
@@ -278,7 +258,7 @@ namespace Inventory_Management_System
                 var list = await _cosmosDbProvider.GetProduct(getRequest);
                 _telemetry.TrackTrace("Search operation successful", properties);
 
-                return  await Helper.CreateHttpResponse(HttpStatusCode.OK, request, data: list);
+                return  await Helper.CreateHttpResponse(statusCode:HttpStatusCode.OK, request, data: list);
             }
             #region ExceptionHandling
             catch (Exception ex)
@@ -286,7 +266,7 @@ namespace Inventory_Management_System
                 isSucess = false;
                 _telemetry.TrackException(ex, properties);
                 validationFailures.Add(ex.Message);
-                return await Helper.CreateHttpResponse<string>(HttpStatusCode.InternalServerError, request, errors: validationFailures); //since we don't know what happened here
+                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.InternalServerError, request, errors: validationFailures); //since we don't know what happened here
             }
             finally
             {
@@ -316,17 +296,12 @@ namespace Inventory_Management_System
                             .Where(c => c.Type == "roles")
                             .Select(c => c.Value)
                             .ToList() ?? new List<string>();
-            if (functionContext.Items.TryGetValue("UserRoles", out var rolesObj) && rolesObj is List<string> roles)
+            if (!roles.Contains("Inventory.UpdateItem"))
             {
-                // Authorization (Authentication is automatically taken care by Azure Entra Id)
-                if (!roles.Contains("Inventory.UpdateItem"))
-                {
-                    _telemetry.TrackEvent("User does not have authorization persmissions", properties);
-                    isSucess = false;
-                    validationFailures.Add("User does not have authorization persmissions");
-                    return await Helper.CreateHttpResponse<string>(HttpStatusCode.Forbidden, request, errors:validationFailures);
-                }
-
+                _telemetry.TrackEvent("User does not have authorization permissions", properties);
+                isSucess = false;
+                validationFailures.Add("User does not have authorization permissions");
+                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.Forbidden, request, errors: validationFailures);
             }
             #endregion
             try
@@ -337,7 +312,7 @@ namespace Inventory_Management_System
 
                 if (!Validations.IsValid<UpdateRequestDTO>(requestContent, validationFailures))
                 {
-                    var response = await Helper.CreateHttpResponse<string>(HttpStatusCode.BadRequest, request, errors: validationFailures);
+                    var response = await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.BadRequest, request, errors: validationFailures);
                     _telemetry.TrackTrace($"Validation errors: {string.Join(",", validationFailures)}");
                     return response;
                 }
@@ -351,7 +326,7 @@ namespace Inventory_Management_System
             {
                 _telemetry.TrackException(ex, properties);
                 isSucess = false;
-                return await Helper.CreateHttpResponse<string>(HttpStatusCode.BadRequest, request, errors:validationFailures); //since this is a caught exception
+                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.BadRequest, request, errors:validationFailures); //since this is a caught exception
             }
             finally
             {
