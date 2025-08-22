@@ -1,120 +1,72 @@
-﻿using Microsoft.Azure.Cosmos;
-using Microsoft.Extensions.Configuration;
+﻿using Entity;
+using Microsoft.EntityFrameworkCore;
 
-namespace Provider
-{
-    public class CosmosDbProvider : ICosmosDbProvider
+namespace Provider {
+    public class CosmosDbProvider: ICosmosDbProvider
     {
-        private readonly Database _database;
-        private readonly IConfiguration _configuration;
-        public CosmosDbProvider(CosmosClient client, string database, IConfiguration configuration )
+        private InventoryDbContext _dbContext;
+        public CosmosDbProvider(InventoryDbContext dbcontext)
         {
-            _database = client.GetDatabase(database);
-            _configuration = configuration;
+            _dbContext = dbcontext;
         }
-        public async Task AddAsync<T>(T item, string containerId, string partitionKey = null)
+
+        public async Task AddAsync(Product product)
         {
-            var container = _database.GetContainer(containerId);
-            if (string.IsNullOrEmpty(partitionKey))
+            await _dbContext.products.AddAsync(product);
+            await _dbContext.SaveChangesAsync();
+        }
+        public async Task DeleteAsync(DeleteRequestDTO deleteRequest)
+        {
+            Product product;
+            if(!string.IsNullOrEmpty(deleteRequest.Name))
+                product = await _dbContext.products.FirstOrDefaultAsync(p => p.Name == deleteRequest.Name && p.ProductCode == deleteRequest.ProductCode && p.Location == deleteRequest.Location);
+
+            else 
+                product = await _dbContext.products.FirstOrDefaultAsync(p => p.ProductCode == deleteRequest.ProductCode && p.Location == deleteRequest.Location);
+            
+            if(product is not null)
             {
-                await container.CreateItemAsync(item);
+                _dbContext.products.Remove(product);
+                await _dbContext.SaveChangesAsync();
             }
-            else await container.CreateItemAsync(item, new PartitionKey(partitionKey));
+            
         }
-
-        public async Task UpdateAsync<T>( string id, string partitionKey, Action<T> updateAction, string containerId)
+        public async Task UpdateAsync(UpdateRequestDTO updateRequest)
         {
-            var container = _database.GetContainer(containerId);
-            int attempt = 0;
-            var maxRetries = int.Parse(_configuration["MaxRetries"] ?? "3");
-            var delayMilliseconds = int.Parse(_configuration["DelayMilliseconds"] ?? "200");
-
-            while (true)
+            var existingProduct = await _dbContext.products.FirstOrDefaultAsync(p => p.Location == updateRequest.Location && p.ProductCode == updateRequest.ProductCode);
+            if(existingProduct is not null)
             {
-                attempt++;
+                if (updateRequest.ProductCode is not null) existingProduct.ProductCode = updateRequest.ProductCode;
+                if (updateRequest.Subcategory is not null) existingProduct.Subcategory = updateRequest.Subcategory;
+                if (updateRequest.Name is not null) existingProduct.Name = updateRequest.Name;
+                if (updateRequest.Price is not null) existingProduct.Price = updateRequest.Price ?? existingProduct.Price;
+                if (updateRequest.Category is not null) existingProduct.Category = updateRequest.Category;
+                if (updateRequest.Description is not null) existingProduct.Description = updateRequest.Description;
+                if (updateRequest.Quantity is not null) existingProduct.Quantity = updateRequest.Quantity?? existingProduct.Quantity;
+                if (updateRequest.Description is not null) existingProduct.Description = updateRequest.Description;
 
-                var response = await container.ReadItemAsync<T>(id, new PartitionKey(partitionKey));
-                var item = response.Resource;
-                var etag = response.ETag;
-                updateAction(item);
-
-                try
-                {
-                    await container.ReplaceItemAsync(
-                        item,
-                        id,
-                        new PartitionKey(partitionKey),
-                        new ItemRequestOptions { IfMatchEtag = etag }
-                    );
-
-                    return;
-                }
-                catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.PreconditionFailed)
-                {
-                    if (attempt >= maxRetries)
-                    {
-                        throw new InvalidOperationException(
-                            $"Failed to update item {id} after {maxRetries} retries due to concurrent modifications.", ex);
-                    }
-
-                    await Task.Delay(delayMilliseconds * attempt* attempt);
-                }
+                await _dbContext.SaveChangesAsync();
             }
         }
 
-        public async Task DeleteAsync<T>(string id, string containerId, string partitionKey)
+        public async Task <Product> GetProduct(GetProductDTO getProductDTO)
         {
-            var container = _database.GetContainer(containerId);
-            await container.DeleteItemAsync<T>(id, new PartitionKey(partitionKey));
+            var existingProduct = await _dbContext.products.FirstOrDefaultAsync(p => 
+            p.ProductCode == getProductDTO.ProductCode &&
+            p.Location == getProductDTO.Location 
+            );
+            return existingProduct;
         }
 
-        public async Task<List<T>> ListAsync<T>(QueryDefinition query, string containerId, string partitionKey = null)
+        public async Task<List<Product>> GetProducts(GetProductsDTO getProductDTO)
         {
-            var container = _database.GetContainer(containerId);
-            var queryRequestOptions = new QueryRequestOptions
-            {
-                MaxConcurrency = -1,
-                MaxItemCount = 1,
-            };
-            var iterator = container.GetItemQueryIterator<T>(query, requestOptions: queryRequestOptions);
-            var list = new List<T>();
-            while(iterator.HasMoreResults)
-            {
-                var items = await iterator.ReadNextAsync();
-                foreach( var item in  items)
-                {
-                    list.Add(item);
-                }
-                
-            }
-            return list;
 
+            return await _dbContext.products
+                .Where(p => p.Location == getProductDTO.Location && 
+                (string.IsNullOrEmpty(getProductDTO.Category) || p.Category == getProductDTO.Category) &&
+                (string.IsNullOrEmpty(getProductDTO.Subcategory) || p.Subcategory == getProductDTO.Subcategory))
+               .ToListAsync();
         }
-
-        /* this api will be exposed in case list is heavy and paginated display needs to be made*/
-        //public async Task<(List<T> Items, string ContinuationToken)> GetByQueryAsync<T>(QueryDefinition query, string containerId, string continuationToken = null, int pageSize = 10)
-        //{
-        //    var container = _database.GetContainer(containerId);
-
-        //    var queryRequestOptions = new QueryRequestOptions
-        //    {
-        //        MaxItemCount = pageSize
-        //    };
-
-        //    var iterator = container.GetItemQueryIterator<T>(
-        //        query,
-        //        continuationToken,
-        //        queryRequestOptions
-        //    );
-
-        //    if (iterator.HasMoreResults)
-        //    {
-        //        var response = await iterator.ReadNextAsync();
-        //        return (response.ToList(), response.ContinuationToken);
-        //    }
-
-        //    return (new List<T>(), null);
-        //}
 
 
     }

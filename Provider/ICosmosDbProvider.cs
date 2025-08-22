@@ -1,4 +1,4 @@
-﻿using Microsoft.Azure.Cosmos;
+﻿/*using Microsoft.Azure.Cosmos;
 using System.Threading.Tasks;
 
 namespace Provider
@@ -11,5 +11,19 @@ namespace Provider
         Task UpdateAsync<T>(string id, string partitionKey, Action<T> updateAction, string containerId);
 
 
+    }
+}
+*/
+using Entity;
+
+namespace Provider
+{
+    public interface ICosmosDbProvider
+    {
+        Task AddAsync(Product product);
+        Task DeleteAsync(DeleteRequestDTO deleteRequestDTO);
+        Task UpdateAsync(UpdateRequestDTO product);
+        Task<List<Product>> GetProducts(GetProductsDTO getProductDTO);
+        Task<Product> GetProduct(GetProductDTO getPrpductDTO);
     }
 }

@@ -2,13 +2,13 @@
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Newtonsoft.Json;
-using Models;
+using Entity;
 
 namespace BusinessLogic
 {
     public class Validations
     {
-        public static bool IsValid(string payload, List<string> errors)
+        public static bool IsValid<T>(string payload, List<string> errors)
         {
             if (string.IsNullOrEmpty(payload) || string.IsNullOrWhiteSpace(payload))
             {
@@ -17,7 +17,12 @@ namespace BusinessLogic
             }
             try
             {
-                JsonConvert.DeserializeObject<Product>(payload);
+                JsonConvert.DeserializeObject<T>(payload);
+            }
+            catch (Newtonsoft.Json.JsonException ex) 
+            {
+                errors.Add($"Invalid JSON for type {typeof(T).Name}: {ex.Message}");
+                return false;
             }
             catch (Exception e)
             {

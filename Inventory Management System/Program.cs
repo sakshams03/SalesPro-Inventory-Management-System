@@ -6,6 +6,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Azure;
 using Microsoft.Azure.Cosmos;
 using Provider;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Azure.WebJobs.ServiceBus;
 
 var host = new HostBuilder()
     .ConfigureFunctionsWebApplication()
@@ -24,7 +26,7 @@ var host = new HostBuilder()
 
         var config = context.Configuration;
         var managedIdentityClientId = config.GetValue<string>("sales-pro-managed-indentity");
-        var serviceBusConnection = config.GetValue<string>("salespro:fullyQualifiedNamespace");
+        var serviceBusConnection = config.GetValue<string>("ServiceBusNamespace");
 
         var credentialOptions = new DefaultAzureCredentialOptions
         {
@@ -37,19 +39,22 @@ var host = new HostBuilder()
                    .WithCredential(new DefaultAzureCredential(credentialOptions));
         });
 
-        services.AddSingleton<ICosmosDbProvider, CosmosDbProvider>(sp =>
-        {
-            var cosmosAccountUri = config.GetValue<string>("CosmosAccountUri");
-            var database = config.GetValue<string>("CosmosDbName");
-            var tokenCredential = new DefaultAzureCredential();
-            var cosmosClient = new CosmosClient(accountEndpoint: cosmosAccountUri, tokenCredential, new CosmosClientOptions
-            {
-                MaxRetryAttemptsOnRateLimitedRequests = 5,
-                MaxRetryWaitTimeOnRateLimitedRequests = TimeSpan.FromSeconds(45)
-            });
+        // Registering cosmos db through Database Context
+        var cosmosAccountUri = config.GetValue<string>("CosmosAccountUri");
+        var database = config.GetValue<string>("CosmosDbName");
+        var tokenCredential = new DefaultAzureCredential(credentialOptions);
 
-            return new CosmosDbProvider(cosmosClient, database, config);
+        services.AddDbContext<InventoryDbContext>(options =>
+        {
+            options.UseCosmos(
+                accountEndpoint: cosmosAccountUri,
+                tokenCredential: tokenCredential,
+                databaseName: database);
         });
+        services.AddScoped<ICosmosDbProvider, CosmosDbProvider>();
+
+
+
     })
     .Build();
 

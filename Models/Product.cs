@@ -1,31 +1,33 @@
-﻿using System.Runtime.Serialization;
+﻿using System.ComponentModel.DataAnnotations;
+using Newtonsoft.Json;
 
-namespace Models
+namespace Entity
 {
     public class Product
     {
-        [DataMember(IsRequired = true)]
+        [Required]
         public string Name { get; set; }
 
-        [DataMember(IsRequired = false)]
         public string Description { get; set; }
 
-        [DataMember(IsRequired = true)]
+        [Required]
         public double Price { get; set; }
 
-        [DataMember(IsRequired = false)]
         public string Category { get; set; }
 
-        [DataMember(IsRequired = false)]
         public string Subcategory { get; set; }
 
-        [DataMember(IsRequired = true)]
+        [Required]
         public int Quantity { get; set; }
 
-        [DataMember(IsRequired = true)]
+        [Required]
+        [Key]
         public string ProductCode { get; set; }
 
-        [DataMember(IsRequired = true)]
+        [Required]
         public string Location { get; set; }
+
+        [ConcurrencyCheck]
+        public string ETag{ get; set;}
     }
 }
