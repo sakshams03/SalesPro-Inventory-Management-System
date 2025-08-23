@@ -8,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 using Provider;
 using System.Diagnostics;
+using System.Drawing;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Security.Claims;
@@ -22,12 +23,14 @@ namespace Inventory_Management_System
         private static Guid guid;
         bool isSucess = true;
         private readonly ICosmosDbProvider _cosmosDbProvider;
+        private readonly Validations validation;
         public SalesPro(TelemetryClient telemetryClient, ServiceBusClient serviceBusClient, IConfiguration configuration, ICosmosDbProvider cosmosDbProvider)
         {
             _telemetry = telemetryClient;
             _serviceBusClient = serviceBusClient;
             _configuration = configuration;
             _cosmosDbProvider = cosmosDbProvider;
+            validation = new Validations(_cosmosDbProvider);
         }
 
         [Function("AddItem")]
@@ -63,11 +66,12 @@ namespace Inventory_Management_System
                 var requestContent = await reader.ReadToEndAsync();
                 requestContent = requestContent.Trim();
 
-                if (!Validations.IsValid<Product>(requestContent, validationFailures))
+                validation.IsValid<Product>(requestContent, validationFailures);
+                validation.ProductExists(requestContent, validationFailures);
+                
+                if(validationFailures.Any())
                 {
-                    var response = await Helper.CreateHttpResponse(statusCode: HttpStatusCode.BadRequest, request, validationFailures);
-                    _telemetry.TrackTrace($"Validation errors: {string.Join(",", validationFailures)}");
-                    return response;
+                    throw new Exception("Validation Failures");
                 }
 
                 var message = JsonConvert.SerializeObject(requestContent);
@@ -137,6 +141,14 @@ namespace Inventory_Management_System
                 return request.CreateResponse(statusCode: HttpStatusCode.OK);
             }
             #region ExceptionHandling
+            catch (InvalidDataException ex)
+            {
+                isSucess = false;
+                _telemetry.TrackException(ex, properties);
+                validationFailures.Add(ex.Message);
+                return await Helper.CreateHttpResponse<string>(statusCode: HttpStatusCode.BadRequest, request, errors: validationFailures); //since we don't know what happened here
+
+            }
             catch (Exception ex)
             {
                 isSucess = false;
@@ -183,9 +195,14 @@ namespace Inventory_Management_System
             #endregion
             try
             {
-                var location = request.Query["Location"].ToString(); // will never be null
+                var location = request.Query["Location"]?.ToString(); // should never be null
                 var category = request?.Query["Category"]?.ToString();
                 var subCategory = request?.Query["SubCategory"]?.ToString();
+                validation.IsEmptyOrNullString(location, nameof(Product.Location), validationFailures);
+                if(validationFailures.Any())
+                {
+                    throw new Exception("Validation Failures");
+                }
                 var getRequest = new GetProductsDTO()
                 {
                     Location = location,
@@ -203,7 +220,7 @@ namespace Inventory_Management_System
                 isSucess = false;
                 _telemetry.TrackException(ex, properties);
                 validationFailures.Add(ex.Message);
-                return await Helper.CreateHttpResponse<string>(statusCode: HttpStatusCode.InternalServerError, request, errors: validationFailures); //since we don't know what happened here
+                return await Helper.CreateHttpResponse<string>(statusCode: HttpStatusCode.BadRequest, request, errors: validationFailures);
             }
             finally
             {
@@ -243,15 +260,15 @@ namespace Inventory_Management_System
             #endregion
             try
             {
-                var location = request.Query["Location"].ToString(); // will never be null
-                var productCode = request.Query["ProductCode"]; // will not be null in this case
+                var location = request.Query["Location"]?.ToString(); // should never be null
+                var productCode = request.Query["ProductCode"]; // should not be null in this case
 
-                if (string.IsNullOrEmpty(productCode) || string.IsNullOrWhiteSpace(productCode))
+                validation.IsEmptyOrNullString(productCode, nameof(Product.ProductCode), validationFailures);
+                validation.IsEmptyOrNullString(location, nameof(Product.Location), validationFailures);
+
+                if (validationFailures.Any())
                 {
-                    isSucess = false;
-                    validationFailures.Add("ProductCode is required when searching for a particular item");
-                    return await Helper.CreateHttpResponse<string>(statusCode: HttpStatusCode.BadRequest, request, errors: validationFailures);
-
+                    throw new Exception("Validation Failures");
                 }
                 var getRequest = new GetProductDTO()
                 {
@@ -270,7 +287,7 @@ namespace Inventory_Management_System
                 isSucess = false;
                 _telemetry.TrackException(ex, properties);
                 validationFailures.Add(ex.Message);
-                return await Helper.CreateHttpResponse<string>(statusCode: HttpStatusCode.InternalServerError, request, errors: validationFailures); //since we don't know what happened here
+                return await Helper.CreateHttpResponse<string>(statusCode: HttpStatusCode.BadRequest, request, errors: validationFailures); //since we don't know what happened here
             }
             finally
             {
@@ -315,18 +332,25 @@ namespace Inventory_Management_System
                 var requestContent = await reader.ReadToEndAsync();
                 requestContent = requestContent.Trim();
 
-                if (!Validations.IsValid<UpdateRequestDTO>(requestContent, validationFailures))
+                validation.IsValid<UpdateRequestDTO>(requestContent, validationFailures);                
+                if(validationFailures.Any())
                 {
-                    var response = await Helper.CreateHttpResponse<string>(statusCode: HttpStatusCode.BadRequest, request, errors: validationFailures);
-                    _telemetry.TrackTrace($"Validation errors: {string.Join(",", validationFailures)}");
-                    return response;
+                    throw new Exception("Validation failures");
                 }
+
                 var payload = JsonConvert.DeserializeObject<UpdateRequestDTO>(requestContent);
                 await _cosmosDbProvider.UpdateAsync(payload);
                 return await Helper.CreateHttpResponse<string>(statusCode: HttpStatusCode.OK, request: request);
 
             }
             #region ExceptionHandling
+            catch(InvalidDataException ex)
+            {
+                _telemetry.TrackException(ex, properties);
+                isSucess = false;
+                validationFailures.Add("The product for updation is not found!");
+                return await Helper.CreateHttpResponse<string>(statusCode: HttpStatusCode.BadRequest, request, errors: validationFailures); //since this is a caught exception
+            }
             catch (Exception ex)
             {
                 _telemetry.TrackException(ex, properties);

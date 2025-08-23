@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Models\Entity.csproj" />
+    <ProjectReference Include="..\Provider\Provider.csproj" />
   </ItemGroup>
 
 </Project>

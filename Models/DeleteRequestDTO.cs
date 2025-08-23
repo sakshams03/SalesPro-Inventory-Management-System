@@ -3,8 +3,6 @@ namespace Entity
 {
     public class DeleteRequestDTO
     {
-        public string? Name { get; set; }
-
         [Required]
         public string ProductCode { get; set; }
 

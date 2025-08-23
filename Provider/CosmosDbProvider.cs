@@ -17,24 +17,18 @@ namespace Provider {
         }
         public async Task DeleteAsync(DeleteRequestDTO deleteRequest)
         {
-            Product product;
-            if(!string.IsNullOrEmpty(deleteRequest.Name))
-                product = await _dbContext.products.FirstOrDefaultAsync(p => p.Name == deleteRequest.Name && p.ProductCode == deleteRequest.ProductCode && p.Location == deleteRequest.Location);
-
-            else 
-                product = await _dbContext.products.FirstOrDefaultAsync(p => p.ProductCode == deleteRequest.ProductCode && p.Location == deleteRequest.Location);
-            
-            if(product is not null)
+            var product = await _dbContext.products.FirstOrDefaultAsync(p => p.ProductCode == deleteRequest.ProductCode && p.Location == deleteRequest.Location);
+            if (product is not null)
             {
                 _dbContext.products.Remove(product);
                 await _dbContext.SaveChangesAsync();
             }
-            
+            else throw new InvalidDataException("The product to be deleted is not found");
         }
         public async Task UpdateAsync(UpdateRequestDTO updateRequest)
         {
             var existingProduct = await _dbContext.products.FirstOrDefaultAsync(p => p.Location == updateRequest.Location && p.ProductCode == updateRequest.ProductCode);
-            if(existingProduct is not null)
+            if (existingProduct is not null)
             {
                 if (updateRequest.ProductCode is not null) existingProduct.ProductCode = updateRequest.ProductCode;
                 if (updateRequest.Subcategory is not null) existingProduct.Subcategory = updateRequest.Subcategory;
@@ -42,11 +36,12 @@ namespace Provider {
                 if (updateRequest.Price is not null) existingProduct.Price = updateRequest.Price ?? existingProduct.Price;
                 if (updateRequest.Category is not null) existingProduct.Category = updateRequest.Category;
                 if (updateRequest.Description is not null) existingProduct.Description = updateRequest.Description;
-                if (updateRequest.Quantity is not null) existingProduct.Quantity = updateRequest.Quantity?? existingProduct.Quantity;
+                if (updateRequest.Quantity is not null) existingProduct.Quantity = updateRequest.Quantity ?? existingProduct.Quantity;
                 if (updateRequest.Description is not null) existingProduct.Description = updateRequest.Description;
 
                 await _dbContext.SaveChangesAsync();
             }
+            else throw new InvalidDataException("The product does not exist!");
         }
 
         public async Task <Product> GetProduct(GetProductDTO getProductDTO)
