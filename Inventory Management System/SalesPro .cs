@@ -1,18 +1,16 @@
 using Azure.Messaging.ServiceBus;
 using BusinessLogic;
+using Entity;
 using Microsoft.ApplicationInsights;
-using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Configuration;
-using Entity;
 using Newtonsoft.Json;
 using Provider;
 using System.Diagnostics;
+using System.IdentityModel.Tokens.Jwt;
 using System.Net;
-using System.Text;
-using Microsoft.Extensions.Options;
-using System.Drawing;
+using System.Security.Claims;
 
 namespace Inventory_Management_System
 {
@@ -37,26 +35,28 @@ namespace Inventory_Management_System
         {
             guid = Guid.NewGuid();
             Stopwatch timer = new Stopwatch();
-            var  properties = new Dictionary<string, string>();
+            var properties = new Dictionary<string, string>();
             timer.Start();
             var startTime = DateTime.UtcNow;
             var validationFailures = new List<string>();
             AddOrUpdate("CorrelationID", guid.ToString(), properties);
 
             #region Authorization
-            var principal = functionContext.GetHttpContext()?.User;
-            var roles = principal?.Claims
-                            .Where(c => c.Type == "roles")
-                            .Select(c => c.Value)
-                            .ToList() ?? new List<string>();
-            if (!roles.Contains("Inventory.AddItem"))
+            var token = request.Headers.GetValues("Authorization").FirstOrDefault();
+            var handler = new JwtSecurityTokenHandler();
+            var jwt = token?.StartsWith("Bearer ") == true ? token.Substring(7) : token;
+            var jwtToken = handler.ReadJwtToken(jwt);
+            var claims = jwtToken.Claims.ToList();
+            var identity = new ClaimsIdentity(claims, "Bearer");
+            var principal = new ClaimsPrincipal(identity);
+            var requiredRoles = new[] { "Inventory.AddItem" };
+            if (!Helper.IsAuthorized(principal, requiredRoles))
             {
-                _telemetry.TrackEvent("User does not have authorization permissions", properties);
-                isSucess = false;
-                validationFailures.Add("User does not have authorization permissions");
-                return await Helper.CreateHttpResponse<string>( statusCode:HttpStatusCode.Forbidden, request, errors: validationFailures);
+                validationFailures.Add($"User does not have required role. Required: {string.Join(" OR ", requiredRoles)}");
+                return await Helper.CreateHttpResponse<string>(HttpStatusCode.Forbidden, request,  errors: validationFailures);
             }
             #endregion
+
             try
             {
                 using var reader = new StreamReader(request.Body);
@@ -65,7 +65,7 @@ namespace Inventory_Management_System
 
                 if (!Validations.IsValid<Product>(requestContent, validationFailures))
                 {
-                    var response = await Helper.CreateHttpResponse(statusCode:HttpStatusCode.BadRequest, request, validationFailures);
+                    var response = await Helper.CreateHttpResponse(statusCode: HttpStatusCode.BadRequest, request, validationFailures);
                     _telemetry.TrackTrace($"Validation errors: {string.Join(",", validationFailures)}");
                     return response;
                 }
@@ -78,7 +78,7 @@ namespace Inventory_Management_System
                 serviceBusMessage.ApplicationProperties.Add("CorrelationID", guid.ToString());// this will help tracking the requests accross multiple components
                 await sender.SendMessageAsync(serviceBusMessage);
                 _telemetry.TrackTrace("Message sent to servicebus", properties);
-                return await Helper.CreateHttpResponse(statusCode:HttpStatusCode.Created, request, validationFailures);
+                return await Helper.CreateHttpResponse(statusCode: HttpStatusCode.Created, request, validationFailures);
 
             }
             #region ExceptionHandling
@@ -86,7 +86,7 @@ namespace Inventory_Management_System
             {
                 _telemetry.TrackException(ex, properties);
                 isSucess = false;
-                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.BadRequest, request,errors: validationFailures); //since this is a caught exception
+                return await Helper.CreateHttpResponse<string>(statusCode: HttpStatusCode.BadRequest, request, errors: validationFailures); //since this is a caught exception
             }
             finally
             {
@@ -111,17 +111,18 @@ namespace Inventory_Management_System
             timer.Start();
             var startTime = DateTime.UtcNow;
             #region Authorization
-            var principal = functionContext.GetHttpContext()?.User;
-            var roles = principal?.Claims
-                            .Where(c => c.Type == "roles")
-                            .Select(c => c.Value)
-                            .ToList() ?? new List<string>();
-            if (!roles.Contains("Inventory.DeleteItem"))
+            var token = request.Headers.GetValues("Authorization").FirstOrDefault();
+            var handler = new JwtSecurityTokenHandler();
+            var jwt = token?.StartsWith("Bearer ") == true ? token.Substring(7) : token;
+            var jwtToken = handler.ReadJwtToken(jwt);
+            var claims = jwtToken.Claims.ToList();
+            var identity = new ClaimsIdentity(claims, "Bearer");
+            var principal = new ClaimsPrincipal(identity);
+            var requiredRoles = new[] { "Inventory.DeleteItem" };
+            if (!Helper.IsAuthorized(principal, requiredRoles))
             {
-                _telemetry.TrackEvent("User does not have authorization permissions", properties);
-                isSucess = false;
-                validationFailures.Add("User does not have authorization permissions");
-                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.Forbidden, request, errors: validationFailures);
+                validationFailures.Add($"User does not have required role. Required: {string.Join(" OR ", requiredRoles)}");
+                return await Helper.CreateHttpResponse<string>(HttpStatusCode.Forbidden, request, errors: validationFailures);
             }
             #endregion
             try
@@ -133,7 +134,7 @@ namespace Inventory_Management_System
                 _telemetry.TrackEvent($"Performing delete option for product with product code {payload.ProductCode}", properties);
                 await _cosmosDbProvider.DeleteAsync(payload);
                 _telemetry.TrackTrace("Deletion successful", properties);
-                return request.CreateResponse(statusCode:HttpStatusCode.OK);
+                return request.CreateResponse(statusCode: HttpStatusCode.OK);
             }
             #region ExceptionHandling
             catch (Exception ex)
@@ -141,7 +142,7 @@ namespace Inventory_Management_System
                 isSucess = false;
                 _telemetry.TrackException(ex, properties);
                 validationFailures.Add(ex.Message);
-                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.InternalServerError, request, errors: validationFailures); //since we don't know what happened here
+                return await Helper.CreateHttpResponse<string>(statusCode: HttpStatusCode.InternalServerError, request, errors: validationFailures); //since we don't know what happened here
             }
             finally
             {
@@ -164,18 +165,20 @@ namespace Inventory_Management_System
             Stopwatch timer = new Stopwatch();
             timer.Start();
             var startTime = DateTime.UtcNow;
+
             #region Authorization
-            var principal = functionContext.GetHttpContext()?.User;
-            var roles = principal?.Claims
-                            .Where(c => c.Type == "roles")
-                            .Select(c => c.Value)
-                            .ToList() ?? new List<string>();
-            if (!roles.Contains("Inventory.ListItems"))
+            var token = request.Headers.GetValues("Authorization").FirstOrDefault();
+            var handler = new JwtSecurityTokenHandler();
+            var jwt = token?.StartsWith("Bearer ") == true ? token.Substring(7) : token;
+            var jwtToken = handler.ReadJwtToken(jwt);
+            var claims = jwtToken.Claims.ToList();
+            var identity = new ClaimsIdentity(claims, "Bearer");
+            var principal = new ClaimsPrincipal(identity);
+            var requiredRoles = new[] { "Inventory.ListItems" };
+            if (!Helper.IsAuthorized(principal, requiredRoles))
             {
-                _telemetry.TrackEvent("User does not have authorization permissions", properties);
-                isSucess = false;
-                validationFailures.Add("User does not have authorization permissions");
-                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.Forbidden, request, errors: validationFailures);
+                validationFailures.Add($"User does not have required role. Required: {string.Join(" OR ", requiredRoles)}");
+                return await Helper.CreateHttpResponse<string>(HttpStatusCode.Forbidden, request, errors: validationFailures);
             }
             #endregion
             try
@@ -192,7 +195,7 @@ namespace Inventory_Management_System
                 _telemetry.TrackEvent($"Performing search operation based on query parameters", properties);
                 var list = await _cosmosDbProvider.GetProducts(getRequest);
                 _telemetry.TrackTrace("Search operation successful", properties);
-                return await Helper.CreateHttpResponse(statusCode:HttpStatusCode.OK, request, data: list);
+                return await Helper.CreateHttpResponse(statusCode: HttpStatusCode.OK, request, data: list);
             }
             #region ExceptionHandling
             catch (Exception ex)
@@ -200,7 +203,7 @@ namespace Inventory_Management_System
                 isSucess = false;
                 _telemetry.TrackException(ex, properties);
                 validationFailures.Add(ex.Message);
-                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.InternalServerError, request, errors:validationFailures); //since we don't know what happened here
+                return await Helper.CreateHttpResponse<string>(statusCode: HttpStatusCode.InternalServerError, request, errors: validationFailures); //since we don't know what happened here
             }
             finally
             {
@@ -224,17 +227,18 @@ namespace Inventory_Management_System
             timer.Start();
             var startTime = DateTime.UtcNow;
             #region Authorization
-            var principal = functionContext.GetHttpContext()?.User;
-            var roles = principal?.Claims
-                            .Where(c => c.Type == "roles")
-                            .Select(c => c.Value)
-                            .ToList() ?? new List<string>();
-            if (!roles.Contains("Inventory.ListItem"))
+            var token = request.Headers.GetValues("Authorization").FirstOrDefault();
+            var handler = new JwtSecurityTokenHandler();
+            var jwt = token?.StartsWith("Bearer ") == true ? token.Substring(7) : token;
+            var jwtToken = handler.ReadJwtToken(jwt);
+            var claims = jwtToken.Claims.ToList();
+            var identity = new ClaimsIdentity(claims, "Bearer");
+            var principal = new ClaimsPrincipal(identity);
+            var requiredRoles = new[] { "Inventory.ListItems" };
+            if (!Helper.IsAuthorized(principal, requiredRoles))
             {
-                _telemetry.TrackEvent("User does not have authorization permissions", properties);
-                isSucess = false;
-                validationFailures.Add("User does not have authorization permissions");
-                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.Forbidden, request, errors: validationFailures);
+                validationFailures.Add($"User does not have required role. Required: {string.Join(" OR ", requiredRoles)}");
+                return await Helper.CreateHttpResponse<string>(HttpStatusCode.Forbidden, request, errors: validationFailures);
             }
             #endregion
             try
@@ -242,11 +246,11 @@ namespace Inventory_Management_System
                 var location = request.Query["Location"].ToString(); // will never be null
                 var productCode = request.Query["ProductCode"]; // will not be null in this case
 
-                if(string.IsNullOrEmpty(productCode) || string.IsNullOrWhiteSpace(productCode))
+                if (string.IsNullOrEmpty(productCode) || string.IsNullOrWhiteSpace(productCode))
                 {
                     isSucess = false;
                     validationFailures.Add("ProductCode is required when searching for a particular item");
-                    return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.BadRequest, request, errors: validationFailures);
+                    return await Helper.CreateHttpResponse<string>(statusCode: HttpStatusCode.BadRequest, request, errors: validationFailures);
 
                 }
                 var getRequest = new GetProductDTO()
@@ -258,7 +262,7 @@ namespace Inventory_Management_System
                 var list = await _cosmosDbProvider.GetProduct(getRequest);
                 _telemetry.TrackTrace("Search operation successful", properties);
 
-                return  await Helper.CreateHttpResponse(statusCode:HttpStatusCode.OK, request, data: list);
+                return await Helper.CreateHttpResponse(statusCode: HttpStatusCode.OK, request, data: list);
             }
             #region ExceptionHandling
             catch (Exception ex)
@@ -266,7 +270,7 @@ namespace Inventory_Management_System
                 isSucess = false;
                 _telemetry.TrackException(ex, properties);
                 validationFailures.Add(ex.Message);
-                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.InternalServerError, request, errors: validationFailures); //since we don't know what happened here
+                return await Helper.CreateHttpResponse<string>(statusCode: HttpStatusCode.InternalServerError, request, errors: validationFailures); //since we don't know what happened here
             }
             finally
             {
@@ -291,17 +295,18 @@ namespace Inventory_Management_System
             AddOrUpdate("CorrelationID", guid.ToString(), properties);
 
             #region Authorization
-            var principal = functionContext.GetHttpContext()?.User;
-            var roles = principal?.Claims
-                            .Where(c => c.Type == "roles")
-                            .Select(c => c.Value)
-                            .ToList() ?? new List<string>();
-            if (!roles.Contains("Inventory.UpdateItem"))
+            var token = request.Headers.GetValues("Authorization").FirstOrDefault();
+            var handler = new JwtSecurityTokenHandler();
+            var jwt = token?.StartsWith("Bearer ") == true ? token.Substring(7) : token;
+            var jwtToken = handler.ReadJwtToken(jwt);
+            var claims = jwtToken.Claims.ToList();
+            var identity = new ClaimsIdentity(claims, "Bearer");
+            var principal = new ClaimsPrincipal(identity);
+            var requiredRoles = new[] { "Inventory.UpdateItem" };
+            if (!Helper.IsAuthorized(principal, requiredRoles))
             {
-                _telemetry.TrackEvent("User does not have authorization permissions", properties);
-                isSucess = false;
-                validationFailures.Add("User does not have authorization permissions");
-                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.Forbidden, request, errors: validationFailures);
+                validationFailures.Add($"User does not have required role. Required: {string.Join(" OR ", requiredRoles)}");
+                return await Helper.CreateHttpResponse<string>(HttpStatusCode.Forbidden, request, errors: validationFailures);
             }
             #endregion
             try
@@ -312,13 +317,13 @@ namespace Inventory_Management_System
 
                 if (!Validations.IsValid<UpdateRequestDTO>(requestContent, validationFailures))
                 {
-                    var response = await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.BadRequest, request, errors: validationFailures);
+                    var response = await Helper.CreateHttpResponse<string>(statusCode: HttpStatusCode.BadRequest, request, errors: validationFailures);
                     _telemetry.TrackTrace($"Validation errors: {string.Join(",", validationFailures)}");
                     return response;
                 }
                 var payload = JsonConvert.DeserializeObject<UpdateRequestDTO>(requestContent);
                 await _cosmosDbProvider.UpdateAsync(payload);
-                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.OK, request: request);
+                return await Helper.CreateHttpResponse<string>(statusCode: HttpStatusCode.OK, request: request);
 
             }
             #region ExceptionHandling
@@ -326,7 +331,7 @@ namespace Inventory_Management_System
             {
                 _telemetry.TrackException(ex, properties);
                 isSucess = false;
-                return await Helper.CreateHttpResponse<string>(statusCode:HttpStatusCode.BadRequest, request, errors:validationFailures); //since this is a caught exception
+                return await Helper.CreateHttpResponse<string>(statusCode: HttpStatusCode.BadRequest, request, errors: validationFailures); //since this is a caught exception
             }
             finally
             {
@@ -343,7 +348,7 @@ namespace Inventory_Management_System
 
 
         #region await Helper Functions
-        private void AddOrUpdate(string key, string value, Dictionary<string , string> properties)
+        private void AddOrUpdate(string key, string value, Dictionary<string, string> properties)
         {
             if (properties.ContainsKey(key)) return;
             else properties.Add(key, value);

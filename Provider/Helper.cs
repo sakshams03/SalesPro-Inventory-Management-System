@@ -2,6 +2,7 @@
 using Microsoft.Azure.Functions.Worker.Http;
 using Newtonsoft.Json;
 using System.Net;
+using System.Security.Claims;
 namespace Provider
 {
     public class Helper
@@ -28,9 +29,11 @@ namespace Provider
         }
         public static async Task<HttpResponseData> CreateHttpResponse<T>(HttpStatusCode statusCode, HttpRequestData request, T data = default, List<string> errors = null)
         {
-            var response = request.CreateResponse(statusCode);
+            var response = request.CreateResponse();
 
-            var apiResponse = new ApiResponse<T>
+            response.StatusCode = statusCode;
+
+            var payload = new
             {
                 IsSuccess = (int)statusCode >= 200 && (int)statusCode < 300,
                 Data = data,
@@ -38,11 +41,27 @@ namespace Provider
                 CorrelationId = Guid.NewGuid().ToString()
             };
 
-            await response.WriteAsJsonAsync(apiResponse);
+            await response.WriteStringAsync(
+                System.Text.Json.JsonSerializer.Serialize(payload),
+                System.Text.Encoding.UTF8
+            );
+
             return response;
         }
 
+        public static bool IsAuthorized(ClaimsPrincipal principal, params string[] requiredRoles)
+        {
+            if (principal == null || !principal.Identity?.IsAuthenticated == true)
+                return false;
 
+            var userRoles = principal.Claims
+                                     .Where(c => c.Type == "roles" || c.Type == ClaimTypes.Role)
+                                     .Select(c => c.Value)
+                                     .Distinct(StringComparer.OrdinalIgnoreCase)
+                                     .ToList();
+
+            return requiredRoles.Any(r => userRoles.Contains(r, StringComparer.OrdinalIgnoreCase));
+        }
 
         private static string CleanJsonString(string jsonString)
         {
